@@ -11,14 +11,16 @@ void sendData(bool init) {
     // Enviar los datos al ESP32 receptor (cabin)
     esp_err_t result = esp_now_send(CABIN_MAC, (uint8_t *)&cabin, sizeof(cabin));
     if (result == ESP_OK) {
-      Serial.println("Datos enviados con éxito");
+      //Datos enviados con éxito
+      espnow_status = 0;
       // Actualizar lastSentCabin con los valores actuales de cabin
       lastSentCabin.on_off = cabin.on_off;
       lastSentCabin.brightness = cabin.brightness;
       lastSentCabin.colorSelection = cabin.colorSelection;
       lastSentCabin.fan_cabin = cabin.fan_cabin;
     } else {
-      Serial.println("Error al enviar los datos");
+      //Error al enviar los datos
+      espnow_status = -11;
     }
   }
 }
@@ -33,14 +35,27 @@ void sendCredentials(String ssid, String password) {
   // Enviar los datos al ESP32 cabin
   esp_err_t result = esp_now_send(CABIN_MAC, (uint8_t *)&credentials, sizeof(credentials));
   if (result == ESP_OK) {
-    Serial.println("Datos enviados con éxito");
+    //Datos enviados con éxito
+    espnow_status = 0;
   } else {
-    Serial.println("Error al enviar los datos");
+    //Error al enviar los datos
+    espnow_status = -11;
   }
 }
 
 // callback when data is sent
 void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
+  if(status != ESP_NOW_SEND_SUCCESS){
+    ack_send = true;
+  }
+  else{
+    ack_send = false;
+  }
+}
+
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  if (data_len == sizeof(StatusData)) {
+    memcpy(&cabinSTS, data, sizeof(cabinSTS));
+    ack_ok = true;
+  }
 }

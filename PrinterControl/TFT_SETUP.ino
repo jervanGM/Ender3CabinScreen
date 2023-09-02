@@ -2,7 +2,7 @@
 
 void TFTSetup(){
   tft.init();
-  tft.setRotation(1);
+  tft.setRotation(3);
   tft.fillScreen(TFT_BLACK);
   topBarSprite.setColorDepth(8);
   topBarSprite.createSprite(tft.width(), TOPBARHEIGHT);
@@ -18,7 +18,7 @@ void GPIOSetup(){
   pinMode(TEMP_PIN, INPUT);
   pinMode(OC1A_PIN, OUTPUT);
 
-  analogWriteResolution(OC1A_PIN, PWM_RESOLUTION);
+  //analogWriteResolution(OC1A_PIN, PWM_RESOLUTION);
 }
 
 void WifiSetup() {
@@ -43,29 +43,42 @@ void ESPNowSetup(){
 
   // Inicializar ESP-NOW
   if (esp_now_init() != ESP_OK) {
-    Serial.println("Error al inicializar ESP-NOW");
-    return;
+    //"Error al inicializar ESP-NOW
+    espnow_status = -1;
   }
-
-  // Setting the PMK key
-  esp_now_set_pmk((uint8_t *)PMK_KEY_STR);
-  // Once ESPNow is successfully Init, we will register for Send CB to
-  // Registrar el nodo remoto (ESP32 cabin)
-  memcpy(peerInfo.peer_addr, CABIN_MAC, 6);
-  peerInfo.channel = 0; 
-  // Setting the master device LMK key
-  for (uint8_t i = 0; i < 16; i++) {
-    peerInfo.lmk[i] = LMK_KEY_STR[i];
+  else{
+    // Setting the PMK key
+    if(esp_now_set_pmk((uint8_t *)PMK_KEY_STR)!= ESP_OK){
+      //Primary key not set
+      espnow_status = -6;
+    };
+    // Once ESPNow is successfully Init, we will register for Send CB to
+    // Registrar el nodo remoto (ESP32 cabin)
+    memcpy(peerInfo.peer_addr, CABIN_MAC, 6);
+    peerInfo.channel = 0; 
+    // Setting the master device LMK key
+    for (uint8_t i = 0; i < 16; i++) {
+      peerInfo.lmk[i] = LMK_KEY_STR[i];
+    }
+    peerInfo.encrypt = true;
+    // Add peer        
+    if (esp_now_add_peer(&peerInfo) != ESP_OK){
+      //Failed to add peer
+      espnow_status = -2;
+    }
+    else{
+      // get the status of Trasnmitted packet
+      if(esp_now_register_send_cb(OnDataSent)!= ESP_OK){
+        //Sen functions not registered
+        espnow_status = -10;
+      }
+      // get the status of Trasnmitted packet
+      if(esp_now_register_recv_cb(OnDataRecv)!= ESP_OK){
+        //Sen functions not registered
+        espnow_status = -9;
+      }
+    }
   }
-  peerInfo.encrypt = true;
-  // Add peer        
-  if (esp_now_add_peer(&peerInfo) != ESP_OK){
-    Serial.println("Failed to add peer");
-    return;
-  }
-
-  // get the status of Trasnmitted packet
-  esp_now_register_send_cb(OnDataSent);
 }
 
 void OTASetup(){

@@ -22,6 +22,9 @@ static const char* LMK_KEY_STR = "OJbj14wukgzaqibYILLOpA";
 #define ON 1
 #define OFF 0
 
+#define TRUE 1
+#define FALSE 0
+
 #define BOTBAR_NUMBER 3
 
 #define ACCESS_POINT "MiESP32AP"
@@ -29,8 +32,8 @@ static const char* LMK_KEY_STR = "OJbj14wukgzaqibYILLOpA";
 #define MAX_IMAGE_WDITH 480 // Adjust for your images
 // Configuración del botón
 #define BUTTON_PIN 17
-#define JOY_X_PIN 35
-#define JOY_Y_PIN 34
+#define JOY_X_PIN 34
+#define JOY_Y_PIN 35
 
 #define TEMP_PIN 33
 #define OC1A_PIN 18
@@ -59,17 +62,19 @@ static const char* LMK_KEY_STR = "OJbj14wukgzaqibYILLOpA";
 #define TEMP_AUTO 25
 
 //DIAGNOSIS TABLE DECLARATIONS
-#define NUMCOL 5
+#define NUMCOL 4
 #define NUMROW 3
 
 #define ESPNOW 0
-#define OTA 1
-#define WIFI 2
-#define TINT 3
+#define WIFI 1
+#define TINT 2
 
 #define CTRL 0
 #define CAB 1
 
+#define ACKINTERVAL 5000
+#define WAITINTERVAL 1000
+#define MAXATTEMPS 10
 //============================================================================
 //== Devuelve flanco de subida si se da en la entrada con enable activo 
 //== (2 posibles entradas)

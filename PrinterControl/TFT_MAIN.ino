@@ -91,6 +91,9 @@ void mainMenuSM() {
   }
   #define ESPNOW 0
   diagSTS[CTRL][TINT] = intTempDiagnosis();
+  diagSTS[CTRL][WIFI] = wifiDiagnosis();
+  diagSTS[CTRL][ESPNOW] = espNowDiagnosis(espnow_status);
+  cabinDiagnosis();
   drawBottomBar();
 }
 

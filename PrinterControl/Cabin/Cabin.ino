@@ -1,7 +1,7 @@
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 #include <Arduino.h>
-#include <analogWrite.h>
+//#include <analogWrite.h>
 #include <esp_now.h>
 #include <FastLED.h>
 
@@ -15,7 +15,13 @@ CRGB leds[NUM_LEDS];
 
 CRGB previousColor = CRGB::Black;
 CRGB currentColor = CRGB::Black;
-
+#ifdef __cplusplus
+extern "C" {
+#endif
+uint8_t temprature_sens_read();
+#ifdef __cplusplus
+}
+#endif
 
 // Define los colores que deseas utilizar
 DEFINE_GRADIENT_PALETTE(heatmap_gp) {
@@ -38,6 +44,14 @@ static const char* PMK_KEY_STR = "C8nSJlxlsg4NJM+Bv+RF7A";
 static const char* LMK_KEY_STR = "OJbj14wukgzaqibYILLOpA";
 uint8_t CTRL_MAC[] = {0xEC, 0x62, 0x60, 0x9C, 0x4E, 0x50};
 #define  OC1B_PIN 19
+
+enum diag_sts 
+{
+    STSOK = 0, 
+    STSWARN,
+    STSFAIL,
+    STSUNKN
+};
 //uint8_t CTRL_MAC[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 typedef struct {
   // Agrega aquí las variables que quieras enviar
@@ -53,16 +67,30 @@ typedef struct {
   char password[64];
 } WifiData;
 
+typedef struct StatusData{
+  enum diag_sts wifists = STSOK;
+  enum diag_sts tintsts = STSOK;
+  uint8_t numerr = 0;
+  uint8_t numwarn = 0;
+  char message[64];
+} StatusData;
+
 bool wifi_received = 0;
 WifiData credentials;
 CabinData cabin;
+StatusData status;
 // Registrar el nodo remoto (ESP32 controlador)
 esp_now_peer_info_t peerInfo;
 CRGBPalette16 targetPalette = heatmap_gp;
 TBlendType    currentBlending;
 
-void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+// callback when data is sent
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+ 
+}
 
+void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
+  String receivedMessage = String((char *)data);
   if (data_len == sizeof(CabinData)) {
     Serial.println("RECIBO MENSAJES A");
     memcpy(&cabin, data, sizeof(cabin));
@@ -71,6 +99,13 @@ void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len) {
     Serial.println("RECIBO MENSAJES B");
     memcpy(&credentials, data, sizeof(credentials));
     wifi_received = 1;
+  }
+  else if (data_len == sizeof(boolean)) {
+    boolean receivedValue = *reinterpret_cast<const boolean*>(data);
+    if(receivedValue) ESP.restart();
+  }
+  else if(receivedMessage == "STATUS"){
+    esp_now_send(CTRL_MAC, (uint8_t *)&status, sizeof(status));
   }
 }
 
@@ -118,13 +153,15 @@ void OTASetup(){
 
 void WifiConnect(){
   while(!wifi_received){
-      Serial.println("Wifi credentials not received yet"); 
+      Serial.println("Wifi credentials not received yet");
+      status.wifists = STSFAIL; 
       delay(500);
   }
   
   WiFi.begin(credentials.ssid, credentials.password);
   while (WiFi.status() != WL_CONNECTED) {
       delay(500);
+      status.wifists = STSWARN;
       Serial.print(".");
   }
 
@@ -154,12 +191,16 @@ void ESPNowSetup(){
 
   // Registrar la función de recepción de datos
   esp_now_register_recv_cb(OnDataRecv);
+  esp_now_register_send_cb(OnDataSent);
+  Serial.print("MAC Address: ");
+  Serial.println(WiFi.macAddress());
 }
 
 void setup() {
   Serial.begin(9600);
   pinMode(OC1B_PIN, OUTPUT);
-  analogWriteResolution(OC1B_PIN, 8);
+  pinMode(D13, OUTPUT);
+  //analogWriteResolution(OC1B_PIN, 8);
   // Inicializar WiFi en modo estación (STA)
   WiFi.mode(WIFI_AP_STA);
 
@@ -170,7 +211,7 @@ void setup() {
   //Configure OTA
   OTASetup();
 
-  FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
+  FastLED.addLeds<LED_TYPE, D13, COLOR_ORDER>(leds, NUM_LEDS).setCorrection( TypicalLEDStrip );
   FastLED.setBrightness(  BRIGHTNESS );
     
   currentBlending = NOBLEND;  
@@ -180,6 +221,7 @@ void setup() {
 void loop() {
   ArduinoOTA.handle();
   analogWrite(OC1B_PIN,cabin.fan_cabin*2.55);
+  cabinDiagnosis();
   FillLEDsFromPaletteColors(cabin.colorSelection);
 }
 
@@ -201,4 +243,83 @@ void FillLEDsFromPaletteColors(uint8_t colorIndex) {
 
     // Almacena el color actual como el color previo para la próxima transición
     previousColor = currentColor;
+}
+// typedef struct StatusData{
+//   enum diag_sts wifists = STSOK;
+//   enum diag_sts tintsts = STSOK;
+//   uint8_t numerr = 0;
+//   uint8_t numwarn = 0;
+//   char message[64];
+// } StatusData;
+void cabinDiagnosis(){
+    status.wifists = wifiDiagnosis();
+    status.tintsts = intTempDiagnosis();
+}
+
+enum diag_sts intTempDiagnosis(){
+    enum diag_sts tdiag = STSOK;
+    float internal_temp = ((temprature_sens_read() - 32) / 1.8);
+    if(internal_temp < -35 || internal_temp > 80 ) tdiag = STSFAIL;
+    else if (internal_temp < -20 || internal_temp > 70 ) tdiag = STSWARN;
+    else if (internal_temp >= -20 && internal_temp <= 70 ) tdiag = STSOK;
+    else tdiag = STSUNKN;
+
+    return tdiag;
+}
+
+enum diag_sts wifiDiagnosis(){
+  enum diag_sts wdiag = STSOK;
+  int8_t status = 0;
+  switch (WiFi.status()) {
+    case WL_CONNECTED:
+      //Conectado
+      status = 0;
+      break;
+    case WL_NO_SHIELD:
+      //Sin módulo WiFi
+      status = -11;
+      break;
+    case WL_IDLE_STATUS:
+      //En espera
+      status = 1;
+      break;
+    case WL_NO_SSID_AVAIL:
+      //Red no disponible
+      status = -9;
+      break;
+    case WL_SCAN_COMPLETED:
+      //Escaneo completado
+      status = 2;
+      break;
+    case WL_CONNECT_FAILED:
+      //Error al conectar
+      status = -1;
+      break;
+    case WL_CONNECTION_LOST:
+      //Conexión perdida
+      status = -2;
+      break;
+    case WL_DISCONNECTED:
+      //Desconectado
+      status = 2;
+      break;
+  }
+  int rssi = WiFi.RSSI(); // Obtener el valor de intensidad de señal (RSSI)
+  if(status == 0){
+    if (rssi < -70) {
+      // señal es débil. Puede haber problemas de conectividad.
+      status = -12;
+    } else if (rssi >= -70 && rssi < -50) {
+      //La señal es moderada.
+      status = 12;
+    } else {
+      //La señal es fuerte.");
+      status = 0;
+    }
+  }
+
+  if(status > 0) wdiag = STSWARN;
+  else if(status< 0 ) wdiag = STSFAIL;
+  else wdiag = STSOK;
+  return wdiag;
 }

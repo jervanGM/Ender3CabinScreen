@@ -4,7 +4,7 @@
 #include <WiFi.h>
 #include <ArduinoOTA.h>
 #include <Arduino.h>
-#include <analogWrite.h>
+//#include <analogWrite.h>
 #include <WiFiManager.h> // Incluye la biblioteca WiFiManager
 #include "TFT_MENU_SM_ENUM.h"
 #include "TFT_AUX.h"
@@ -60,6 +60,9 @@ enum diag_sm StateDIAG = RST_CRTL;
 enum diagPlus_sm StateDIAGPLUS = LESS_BTN;
 
 enum diag_sts diagSTS[NUMROW-1][NUMCOL-1];
+int8_t espnow_status = 0;
+bool ack_ok = false;
+bool ack_send = false;
 
 bool onScreen = 0;
 bool auto_mode = 0;
@@ -72,6 +75,14 @@ typedef struct CabinData{
   int fan_cabin = 50; // Value to be displayed
 } CabinData;
 
+typedef struct StatusData{
+  enum diag_sts wifists = STSOK;
+  enum diag_sts tintsts = STSOK;
+  uint8_t numerr = 0;
+  uint8_t numwarn = 0;
+  char message[64];
+} StatusData;
+
 typedef struct WifiData{
   // Agrega aquí las variables que quieras enviar
   char ssid[32];
@@ -81,8 +92,9 @@ typedef struct WifiData{
 
 
 CabinData cabin;
+StatusData cabinSTS;
 int temperature = 0;
 
 //ESP NOW MAC ADDRESS
-uint8_t CABIN_MAC[] = {0xEC, 0x62, 0x60, 0x9C, 0x8E, 0xEC};
+uint8_t CABIN_MAC[] = {0x78, 0x21, 0x84, 0x9E, 0xB3, 0x20};
 esp_now_peer_info_t peerInfo;

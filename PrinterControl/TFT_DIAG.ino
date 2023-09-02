@@ -17,6 +17,8 @@ void diagScreenSM() {
       
       if(myButton.state() ==SHORTCLICK ){
         //Mandar mensaje para hacer reset al ESP de cabina
+        boolean valueToSend = true;
+        esp_now_send(NULL, (uint8_t*)&valueToSend, sizeof(valueToSend));
       }
       if(reading<0) reading = 0;
       break;
@@ -41,20 +43,107 @@ void diagScreenSM() {
 
 }
 
-uint8_t espNowDiagnosis(){
-  
+enum diag_sts espNowDiagnosis(int8_t status){
+  enum diag_sts ediag = STSOK;
+  if(status > 0) ediag = STSWARN;
+  else if(status< 0 ) ediag = STSFAIL;
+  else ediag = STSOK;
+  return ediag;
 }
 
-uint8_t wifiDiagnosis(){
-  
+enum diag_sts wifiDiagnosis(){
+  enum diag_sts wdiag = STSOK;
+  int8_t status = 0;
+  switch (WiFi.status()) {
+    case WL_CONNECTED:
+      //Conectado
+      status = 0;
+      break;
+    case WL_NO_SHIELD:
+      //Sin módulo WiFi
+      status = -11;
+      break;
+    case WL_IDLE_STATUS:
+      //En espera
+      status = 1;
+      break;
+    case WL_NO_SSID_AVAIL:
+      //Red no disponible
+      status = -9;
+      break;
+    case WL_SCAN_COMPLETED:
+      //Escaneo completado
+      status = 2;
+      break;
+    case WL_CONNECT_FAILED:
+      //Error al conectar
+      status = -1;
+      break;
+    case WL_CONNECTION_LOST:
+      //Conexión perdida
+      status = -2;
+      break;
+    case WL_DISCONNECTED:
+      //Desconectado
+      status = 2;
+      break;
+  }
+  int rssi = WiFi.RSSI(); // Obtener el valor de intensidad de señal (RSSI)
+  if(status == 0){
+    if (rssi < -70) {
+      // señal es débil. Puede haber problemas de conectividad.
+      status = -12;
+    } else if (rssi >= -70 && rssi < -50) {
+      //La señal es moderada.
+      status = 12;
+    } else {
+      //La señal es fuerte.");
+      status = 0;
+    }
+  }
+
+  if(status > 0) wdiag = STSWARN;
+  else if(status< 0 ) wdiag = STSFAIL;
+  else wdiag = STSOK;
+  return wdiag;
+}
+
+void cabinDiagnosis(){
+  unsigned long currentTime = millis();
+  static unsigned long lastSentTime = 0;
+  static unsigned long lastWaitTime = 0;
+  bool send = FALSE;
+  static uint8_t attemps = 0;
+  if ((currentTime - lastSentTime >= ACKINTERVAL)) {
+    lastSentTime = currentTime;
+    send = TRUE;
+  }
+  if(send || diagSTS[CABIN][ESPNOW] == STSWARN){
+    esp_now_send(nullptr, (uint8_t *)"STATUS", 6); 
+    if(ack_ok){
+        diagSTS[CABIN][TINT] = cabinSTS.tintsts;
+        diagSTS[CABIN][WIFI] = cabinSTS.wifists;
+        diagSTS[CABIN][ESPNOW] = STSOK;
+        attemps = 0;
+    }
+    else{
+      diagSTS[CABIN][ESPNOW] = STSWARN;
+      attemps++;
+    }
+    if(attemps >= MAXATTEMPS){
+      diagSTS[CABIN][ESPNOW] = STSFAIL;   
+      diagSTS[CABIN][TINT] = STSFAIL;
+      diagSTS[CABIN][WIFI] = STSFAIL;  
+    }
+  }
 }
 
 enum diag_sts intTempDiagnosis(){
     enum diag_sts tdiag = STSOK;
     float internal_temp = ((temprature_sens_read() - 32) / 1.8);
     if(internal_temp < -35 || internal_temp > 80 ) tdiag = STSFAIL;
-    else if (internal_temp < -20 || internal_temp > 65 ) tdiag = STSWARN;
-    else if (internal_temp >= -20 && internal_temp <= 65 ) tdiag = STSOK;
+    else if (internal_temp < -20 || internal_temp > 70 ) tdiag = STSWARN;
+    else if (internal_temp >= -20 && internal_temp <= 70 ) tdiag = STSOK;
     else tdiag = STSUNKN;
 
     return tdiag;
@@ -107,9 +196,9 @@ void drawDiagTable(int init){
     int cellHeight = tableHeight / NUMROW;
     int X_start = 20;
     int Y_start = 90;
-    String text_data[NUMROW][NUMCOL] = { {"","ESPN","OTA","Wifi","Tint"},
-                                        {"CTRL","D","D","D","D"},
-                                        {"CABIN","D","D","D","D"}};
+    String text_data[NUMROW][NUMCOL] = { {"","ESPN","Wifi","Tint"},
+                                        {"CTRL","D","D","D"},
+                                        {"CABIN","D","D","D"}};
   if(!init){
     ofr.setDrawer(tft);   
     // Dibuja bordes de la tabla
@@ -134,7 +223,7 @@ void drawDiagTable(int init){
       for (int col = 1; col < NUMCOL; col++) {
         int x = X_start + col * cellWidth;
         int y = Y_start + row * cellHeight;
-        drawDevDiangosis(diagSTS[CTRL][TINT], x , y ,cellWidth,cellHeight);
+        drawDevDiangosis(diagSTS[row-1][col-1], x , y ,cellWidth,cellHeight);
       }
     }
   }
